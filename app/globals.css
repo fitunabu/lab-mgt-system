@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+.empty-state-panel {
+  min-height: clamp(26rem, calc(100dvh - 8rem), 44rem);
+}
+
+.app-table-shell {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 8px 24px -20px rgb(15 23 42 / 35%);
+}
+
+.app-data-table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.app-data-table--users {
+  min-width: 58rem;
+}
+
+.app-data-table--laboratories {
+  min-width: 52rem;
+}
+
+.app-data-table--requests {
+  min-width: 78rem;
+}
+
+.app-data-table thead {
+  background: #edf3f7;
+}
+
+.app-data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #dbe4ec;
+  color: #435469;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.app-data-table tbody tr:nth-child(even) td {
+  background: #fbfcfd;
+}
+
+.app-data-table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.app-data-table tbody tr:hover td {
+  background: #f0f7fb;
+}
+
+.app-data-table tbody tr + tr td {
+  border-top: 1px solid #f1f5f9;
+}
+
+.app-data-table tbody td {
+  padding: 0.875rem 1rem;
+  color: #334155;
+  line-height: 1.45;
+  vertical-align: top;
+}

@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TECHNICAL_ASSISTANT
+  TEACHER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LaboratoryStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  INSPECTION
+  MAINTENANCE
+  INACTIVE
+}
+
+enum EquipmentType {
+  COMPUTER
+  CHAIR
+  MOUSE
+  KEYBOARD
+  ADAPTER
+  OTHER
+}
+
+enum EquipmentStatus {
+  FUNCTIONAL
+  NON_FUNCTIONAL
+  UNDER_MAINTENANCE
+  DAMAGED
+  MISSING
+  RETIRED
+}
+
+enum EquipmentCondition {
+  GOOD
+  FAIR
+  POOR
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  TERMINATION_REQUESTED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  ACTIVE
+  INSPECTION
+  COMPLETED
+  CANCELLED
+}
+
+enum InspectionStatus {
+  FUNCTIONAL
+  NON_FUNCTIONAL
+  DAMAGED
+  MISSING
+}
+
+enum ReportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model User {
+  id                    String   @id @default(cuid())
+  name                  String
+  email                 String   @unique
+  phone                 String?
+  passwordHash          String
+  role                 UserRole
+  status               UserStatus @default(ACTIVE)
+  assignedLaboratoryId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  assignedLaboratory  Laboratory?                  @relation("AssignedLaboratoryUsers", fields: [assignedLaboratoryId], references: [id])
+  requests            LaboratoryRequest[]          @relation("TeacherRequests")
+  approvals           LaboratoryRequest[]          @relation("RequestApprovals")
+  sessions            LaboratorySession[]          @relation("TeacherSessions")
+  inspections         EquipmentInspection[]        @relation("InspectionOperator")
+  reportsCreated      EquipmentReport[]            @relation("ReportCreator")
+  reportsResolved     EquipmentReport[]            @relation("ReportResolver")
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+
+  @@index([role, status])
+}
+
+model Laboratory {
+  id          String            @id @default(cuid())
+  name        String
+  code        String            @unique
+  location    String
+  capacity    Int
+  status      LaboratoryStatus  @default(AVAILABLE)
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  equipment       Equipment[]
+  requests        LaboratoryRequest[]
+  sessions        LaboratorySession[]
+  assignedUsers   User[]             @relation("AssignedLaboratoryUsers")
+  auditLogs       AuditLog[]
+
+  @@index([status])
+}
+
+model Equipment {
+  id            String          @id @default(cuid())
+  assetNumber   String          @unique
+  equipmentType EquipmentType
+  name          String
+  brand         String?
+  model         String?
+  serialNumber  String?         @unique
+  hardDiskSize  String?
+  ramSize       String?
+  installedOS   String?
+  laboratoryId  String
+  status        EquipmentStatus @default(FUNCTIONAL)
+  condition     EquipmentCondition @default(GOOD)
+  purchaseDate  DateTime?
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  laboratory      Laboratory            @relation(fields: [laboratoryId], references: [id])
+  inspections     EquipmentInspection[]
+  reports         EquipmentReport[]
+
+  @@index([laboratoryId, status])
+  @@index([equipmentType])
+}
+
+model LaboratoryRequest {
+  id               String        @id @default(cuid())
+  teacherId        String
+  laboratoryId     String
+  reservationDate  DateTime
+  startTime        String
+  endTime          String
+  course           String
+  studentCount     Int
+  purpose          String
+  status           RequestStatus @default(PENDING)
+  startDate        DateTime?
+  endDate          DateTime?
+  recurrencePattern String?
+  rejectionReason  String?
+  approvedBy       String?
+  approvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  teacher          User            @relation("TeacherRequests", fields: [teacherId], references: [id])
+  laboratory       Laboratory      @relation(fields: [laboratoryId], references: [id])
+  approver         User?           @relation("RequestApprovals", fields: [approvedBy], references: [id])
+  session          LaboratorySession?
+
+  @@index([laboratoryId, reservationDate])
+  @@index([teacherId, status])
+}
+
+model LaboratorySession {
+  id              String        @id @default(cuid())
+  requestId       String        @unique
+  teacherId       String
+  laboratoryId    String
+  scheduledStart  DateTime
+  scheduledEnd    DateTime
+  actualStart     DateTime?
+  actualEnd       DateTime?
+  status          SessionStatus @default(SCHEDULED)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  request         LaboratoryRequest @relation(fields: [requestId], references: [id])
+  teacher         User             @relation("TeacherSessions", fields: [teacherId], references: [id])
+  laboratory      Laboratory       @relation(fields: [laboratoryId], references: [id])
+  inspections     EquipmentInspection[]
+  reports         EquipmentReport[]
+
+  @@index([laboratoryId, status])
+}
+
+model EquipmentInspection {
+  id           String            @id @default(cuid())
+  sessionId    String
+  equipmentId  String
+  statusBefore InspectionStatus?
+  statusAfter  InspectionStatus?
+  notes        String?
+  inspectedBy  String?
+  inspectedAt  DateTime?
+  createdAt    DateTime          @default(now())
+
+  session      LaboratorySession @relation(fields: [sessionId], references: [id])
+  equipment    Equipment         @relation(fields: [equipmentId], references: [id])
+  inspector    User?             @relation("InspectionOperator", fields: [inspectedBy], references: [id])
+
+  @@index([sessionId, equipmentId])
+}
+
+model EquipmentReport {
+  id          String       @id @default(cuid())
+  equipmentId String
+  sessionId   String?
+  reportedBy  String
+  description String
+  status      ReportStatus @default(OPEN)
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  equipment   Equipment         @relation(fields: [equipmentId], references: [id])
+  session     LaboratorySession? @relation(fields: [sessionId], references: [id])
+  reporter    User              @relation("ReportCreator", fields: [reportedBy], references: [id])
+  resolver    User?             @relation("ReportResolver", fields: [resolvedBy], references: [id])
+
+  @@index([status, equipmentId])
+}
+
+model Notification {
+  id        String          @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean         @default(false)
+  createdAt DateTime        @default(now())
+
+  user      User            @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  laboratoryId String?
+  action      String
+  entity      String
+  entityId    String?
+  description String
+  createdAt   DateTime @default(now())
+
+  user        User?        @relation(fields: [userId], references: [id])
+  laboratory  Laboratory?  @relation(fields: [laboratoryId], references: [id])
+
+  @@index([entity, entityId])
+}
