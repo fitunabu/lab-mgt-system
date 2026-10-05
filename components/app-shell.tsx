@@ -28,9 +28,13 @@ type AppShellProps = {
     name?: string | null;
     role?: string | null;
   } | null;
+  assignedLaboratories?: Array<{
+    name: string;
+    code: string;
+  }>;
 };
 
-export function AppShell({ children, isAuthenticated, user }: AppShellProps) {
+export function AppShell({ children, isAuthenticated, user, assignedLaboratories = [] }: AppShellProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -112,8 +116,18 @@ export function AppShell({ children, isAuthenticated, user }: AppShellProps) {
               <h2 className="text-xl font-semibold text-slate-900">{user?.name ?? 'User'}</h2>
             </div>
             <div className="flex items-center gap-3">
-              <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-slate-700">
-                {role}
+              <div className="flex flex-col items-end gap-1">
+                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-slate-700">
+                  {role}
+                </div>
+                {role === 'TECHNICAL_ASSISTANT' && (
+                  <p className="text-xs text-slate-600">
+                    Assigned labs:{' '}
+                    {assignedLaboratories.length
+                      ? assignedLaboratories.map((laboratory) => `${laboratory.name} (${laboratory.code})`).join(', ')
+                      : 'Unassigned'}
+                  </p>
+                )}
               </div>
               <button
                 type="button"

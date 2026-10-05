@@ -1,9 +1,9 @@
 import { Building2, Boxes, ClipboardCheck, ShieldCheck, Users, Wrench } from 'lucide-react';
 import { SummaryCard } from '@/components/dashboard/summary-card';
+import { AssistantLaboratoryAssignment } from '@/components/assistant-laboratory-assignment';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import { assignAssistantLaboratory } from '@/lib/actions';
 import { isScheduledStartInFuture } from '@/lib/utils';
 
 export default async function AdminDashboardPage() {
@@ -21,7 +21,7 @@ export default async function AdminDashboardPage() {
     prisma.user.findMany({
       where: { role: 'TECHNICAL_ASSISTANT' },
       orderBy: { name: 'asc' },
-      include: { assignedLaboratory: { select: { id: true, name: true, code: true } } },
+      include: { assignedLaboratories: { select: { id: true, name: true, code: true } } },
     }),
   ]);
 
@@ -107,37 +107,11 @@ export default async function AdminDashboardPage() {
 
         <div className="space-y-4">
           {assistants.map((assistant) => (
-            <form key={assistant.id} action={assignAssistantLaboratory} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm md:flex-row md:items-center md:justify-between">
-              <input type="hidden" name="assistantId" value={assistant.id} />
-              <div>
-                <p className="font-medium text-slate-900">{assistant.name}</p>
-                <p className="text-sm text-slate-600">
-                  {assistant.assignedLaboratory ? `${assistant.assignedLaboratory.name} (${assistant.assignedLaboratory.code})` : 'No laboratory assigned'}
-                </p>
-              </div>
-
-              <div className="flex w-full max-w-md items-center gap-3">
-                <select
-                  name="laboratoryId"
-                  defaultValue={assistant.assignedLaboratory?.id ?? ''}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-                >
-                  <option value="">Unassigned</option>
-                  {availableLabs.map((lab) => (
-                    <option key={lab.id} value={lab.id}>
-                      {lab.name} ({lab.code})
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  Save
-                </button>
-              </div>
-            </form>
+            <AssistantLaboratoryAssignment
+              key={assistant.id}
+              assistant={assistant}
+              laboratories={availableLabs}
+            />
           ))}
         </div>
       </div>

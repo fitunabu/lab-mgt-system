@@ -2,11 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { requestSchema, technicalAssistantSchema } from '@/lib/validations';
+import { inspectionSchema, requestSchema, technicalAssistantSchema } from '@/lib/validations';
 
 function minutesFromTime(value: string) {
   const [hours, minutes] = value.split(':').map(Number);
@@ -23,6 +24,28 @@ function toLocalDateKey(date: Date) {
 function dateAtTime(date: Date, time: string) {
   const [hours, minutes] = time.split(':').map(Number);
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hours - 3, minutes));
+}
+
+async function getAssignedLaboratoryIds(userId: string) {
+  const assistant = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { assignedLaboratories: { select: { id: true } } },
+  });
+  return assistant?.assignedLaboratories.map((laboratory) => laboratory.id) ?? [];
+}
+
+async function validateLaboratoryIds(laboratoryIds: string[]) {
+  if (new Set(laboratoryIds).size !== laboratoryIds.length) {
+    throw new Error('A laboratory was selected more than once.');
+  }
+
+  const laboratories = await prisma.laboratory.findMany({
+    where: { id: { in: laboratoryIds } },
+    select: { id: true },
+  });
+  if (laboratories.length !== laboratoryIds.length) {
+    throw new Error('One or more selected laboratories were not found.');
+  }
 }
 
 function isBeforeDueDate(request: { reservationDate: Date }) {
@@ -399,10 +422,10 @@ export async function approveTerminationRequest(requestId: string) {
 
   const assistant = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { assignedLaboratoryId: true },
+    select: { assignedLaboratories: { select: { id: true } } },
   });
 
-  if (assistant?.assignedLaboratoryId && request.laboratoryId !== assistant.assignedLaboratoryId) {
+  if (!assistant?.assignedLaboratories.some((laboratory) => laboratory.id === request.laboratoryId)) {
     throw new Error('You can only approve termination requests for your assigned laboratory.');
   }
 
@@ -687,6 +710,103 @@ export async function completeInspection(sessionId: string) {
   revalidatePath('/inspections');
 }
 
+export async function createComputerInspection(formData: FormData) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'TECHNICAL_ASSISTANT') {
+    throw new Error('Only technical assistants can record computer inspections.');
+  }
+
+  const assignedLaboratoryIds = await getAssignedLaboratoryIds(session.user.id);
+  const laboratoryId = formData.get('laboratoryId')?.toString() ?? '';
+  if (!assignedLaboratoryIds.includes(laboratoryId)) {
+    throw new Error('You must be assigned to a laboratory before recording inspections.');
+  }
+
+  const computers = await prisma.equipment.findMany({
+    where: { equipmentType: 'COMPUTER', laboratoryId },
+    select: { id: true, status: true },
+    orderBy: { id: 'asc' },
+  });
+  if (computers.length === 0) {
+    throw new Error('There are no registered computers to inspect in your assigned laboratory.');
+  }
+
+  const submittedComputerIds = formData.getAll('computerId').map((value) => value.toString());
+  const expectedComputerIds = new Set(computers.map((computer) => computer.id));
+  if (
+    submittedComputerIds.length !== computers.length ||
+    new Set(submittedComputerIds).size !== submittedComputerIds.length ||
+    submittedComputerIds.some((id) => !expectedComputerIds.has(id))
+  ) {
+    throw new Error('Submit an inspection for every registered computer in your assigned laboratory.');
+  }
+
+  const inspectedAt = new Date();
+  const batchId = randomUUID();
+  const inspectionRecords = computers.map((computer) => {
+    const parsed = inspectionSchema.safeParse({
+      equipmentId: computer.id,
+      internetConnected: formData.get(`internetConnected_${computer.id}`)?.toString() ?? '',
+      monitorFunctional: formData.get(`monitorFunctional_${computer.id}`)?.toString() ?? '',
+      mouseFunctional: formData.get(`mouseFunctional_${computer.id}`)?.toString() ?? '',
+      powerCableFunctional: formData.get(`powerCableFunctional_${computer.id}`)?.toString() ?? '',
+      wallOutletFunctional: formData.get(`wallOutletFunctional_${computer.id}`)?.toString() ?? '',
+      osFunctional: formData.get(`osFunctional_${computer.id}`)?.toString() ?? '',
+      notes: formData.get(`notes_${computer.id}`)?.toString() ?? '',
+    });
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]?.message ?? 'Complete all inspection checks.';
+      throw new Error(`Computer ${computer.id}: ${issue}`);
+    }
+
+    const checks = {
+      internetConnected: parsed.data.internetConnected === 'true',
+      monitorFunctional: parsed.data.monitorFunctional === 'true',
+      mouseFunctional: parsed.data.mouseFunctional === 'true',
+      powerCableFunctional: parsed.data.powerCableFunctional === 'true',
+      wallOutletFunctional: parsed.data.wallOutletFunctional === 'true',
+      osFunctional: parsed.data.osFunctional === 'true',
+    };
+
+    return {
+      batchId,
+      equipmentId: computer.id,
+      createdAt: inspectedAt,
+      ...checks,
+      statusBefore:
+        computer.status === 'FUNCTIONAL' ||
+        computer.status === 'NON_FUNCTIONAL' ||
+        computer.status === 'DAMAGED' ||
+        computer.status === 'MISSING'
+          ? computer.status
+          : null,
+      statusAfter: Object.values(checks).every(Boolean) ? 'FUNCTIONAL' as const : 'NON_FUNCTIONAL' as const,
+      notes: parsed.data.notes?.trim() || null,
+      inspectedBy: session.user.id,
+      inspectedAt,
+    };
+  });
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.equipmentInspection.createMany({
+      data: inspectionRecords,
+    });
+
+    await transaction.auditLog.create({
+      data: {
+        userId: session.user.id,
+        laboratoryId,
+        action: 'LAB_COMPUTERS_INSPECTED',
+        entity: 'Laboratory',
+        entityId: laboratoryId,
+        description: `${computers.length} registered computers received a new inspection.`,
+      },
+    });
+  });
+
+  revalidatePath('/inspections');
+}
+
 export async function createLaboratory(formData: FormData) {
   const session = await auth();
   if (!session?.user || session.user.role !== 'ADMIN') {
@@ -838,7 +958,7 @@ export async function createTechnicalAssistant(formData: FormData) {
     name: formData.get('name')?.toString() ?? '',
     email: formData.get('email')?.toString() ?? '',
     phone: formData.get('phone')?.toString() ?? '',
-    assignedLaboratoryId: formData.get('assignedLaboratoryId')?.toString() ?? '',
+    assignedLaboratoryIds: formData.getAll('laboratoryIds').map((value) => value.toString()),
     status: formData.get('status')?.toString() ?? 'ACTIVE',
   });
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Invalid assistant details.');
@@ -850,11 +970,7 @@ export async function createTechnicalAssistant(formData: FormData) {
   const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (existing) throw new Error('A user with that email already exists.');
 
-  const assignedLaboratoryId = parsed.data.assignedLaboratoryId || null;
-  if (assignedLaboratoryId) {
-    const laboratory = await prisma.laboratory.findUnique({ where: { id: assignedLaboratoryId } });
-    if (!laboratory) throw new Error('Selected laboratory was not found.');
-  }
+  await validateLaboratoryIds(parsed.data.assignedLaboratoryIds);
 
   const assistant = await prisma.user.create({
     data: {
@@ -864,7 +980,9 @@ export async function createTechnicalAssistant(formData: FormData) {
       passwordHash: await bcrypt.hash(password, 10),
       role: 'TECHNICAL_ASSISTANT',
       status: parsed.data.status,
-      assignedLaboratoryId,
+      assignedLaboratories: {
+        connect: parsed.data.assignedLaboratoryIds.map((id) => ({ id })),
+      },
     },
   });
 
@@ -899,7 +1017,7 @@ export async function updateTechnicalAssistant(formData: FormData) {
     name: formData.get('name')?.toString() ?? '',
     email: formData.get('email')?.toString() ?? '',
     phone: formData.get('phone')?.toString() ?? '',
-    assignedLaboratoryId: formData.get('assignedLaboratoryId')?.toString() ?? '',
+    assignedLaboratoryIds: formData.getAll('laboratoryIds').map((value) => value.toString()),
     status: formData.get('status')?.toString() ?? 'ACTIVE',
   });
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Invalid assistant details.');
@@ -907,11 +1025,7 @@ export async function updateTechnicalAssistant(formData: FormData) {
   const existingEmail = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (existingEmail && existingEmail.id !== id) throw new Error('A user with that email already exists.');
 
-  const assignedLaboratoryId = parsed.data.assignedLaboratoryId || null;
-  if (assignedLaboratoryId) {
-    const laboratory = await prisma.laboratory.findUnique({ where: { id: assignedLaboratoryId } });
-    if (!laboratory) throw new Error('Selected laboratory was not found.');
-  }
+  await validateLaboratoryIds(parsed.data.assignedLaboratoryIds);
 
   const password = formData.get('password')?.toString() ?? '';
   const passwordHash = password
@@ -925,7 +1039,9 @@ export async function updateTechnicalAssistant(formData: FormData) {
       email: parsed.data.email,
       phone: parsed.data.phone || null,
       status: parsed.data.status,
-      assignedLaboratoryId,
+      assignedLaboratories: {
+        set: parsed.data.assignedLaboratoryIds.map((laboratoryId) => ({ id: laboratoryId })),
+      },
       ...(passwordHash ? { passwordHash } : {}),
     },
   });
@@ -952,7 +1068,7 @@ export async function assignAssistantLaboratory(formData: FormData) {
   }
 
   const assistantId = formData.get('assistantId')?.toString();
-  const laboratoryId = formData.get('laboratoryId')?.toString() ?? '';
+  const laboratoryIds = formData.getAll('laboratoryIds').map((value) => value.toString());
 
   if (!assistantId) {
     throw new Error('Assistant not found.');
@@ -967,14 +1083,15 @@ export async function assignAssistantLaboratory(formData: FormData) {
     throw new Error('Only technical assistants can be assigned a laboratory.');
   }
 
-  if (laboratoryId) {
-    const lab = await prisma.laboratory.findUnique({ where: { id: laboratoryId } });
-    if (!lab) throw new Error('Selected laboratory was not found.');
-  }
+  await validateLaboratoryIds(laboratoryIds);
 
   await prisma.user.update({
     where: { id: assistantId },
-    data: { assignedLaboratoryId: laboratoryId || null },
+    data: {
+      assignedLaboratories: {
+        set: laboratoryIds.map((laboratoryId) => ({ id: laboratoryId })),
+      },
+    },
   });
 
   await prisma.auditLog.create({
@@ -983,14 +1100,18 @@ export async function assignAssistantLaboratory(formData: FormData) {
       action: 'ASSISTANT_LAB_ASSIGNMENT_UPDATED',
       entity: 'User',
       entityId: assistantId,
-      description: laboratoryId
-        ? `Admin assigned technical assistant to laboratory ${laboratoryId}.`
-        : 'Admin removed the assigned laboratory from a technical assistant.',
+      description: laboratoryIds.length
+        ? `Admin assigned technical assistant to laboratories ${laboratoryIds.join(', ')}.`
+        : 'Admin removed all laboratory assignments from a technical assistant.',
     },
   });
 
   revalidatePath('/dashboard/admin');
-  redirect('/dashboard/admin');
+  revalidatePath('/users');
+  revalidatePath('/requests');
+  revalidatePath('/equipment');
+  revalidatePath('/inspections');
+  return { assignedCount: laboratoryIds.length };
 }
 
 export async function createEquipment(formData: FormData) {
@@ -1000,18 +1121,10 @@ export async function createEquipment(formData: FormData) {
   }
 
   if (session.user.role === 'TECHNICAL_ASSISTANT') {
-    const assignedUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { assignedLaboratoryId: true },
-    });
-
-    if (!assignedUser?.assignedLaboratoryId) {
-      throw new Error('You must be assigned to a laboratory before adding equipment.');
-    }
-
+    const assignedLaboratoryIds = await getAssignedLaboratoryIds(session.user.id);
     const requestedLabId = formData.get('laboratoryId')?.toString() ?? '';
-    if (requestedLabId !== assignedUser.assignedLaboratoryId) {
-      throw new Error('Technical assistants can only register equipment for their assigned laboratory.');
+    if (!assignedLaboratoryIds.includes(requestedLabId)) {
+      throw new Error('Technical assistants can only register equipment for their assigned laboratories.');
     }
   }
 
@@ -1114,17 +1227,6 @@ export async function updateEquipment(formData: FormData) {
     throw new Error('Only technical assistants and administrators can edit equipment.');
   }
 
-  if (session.user.role === 'TECHNICAL_ASSISTANT') {
-    const assignedUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { assignedLaboratoryId: true },
-    });
-
-    if (!assignedUser?.assignedLaboratoryId) {
-      throw new Error('You must be assigned to a laboratory before editing equipment.');
-    }
-  }
-
   const id = formData.get('id')?.toString();
   if (!id) throw new Error('Equipment not found.');
 
@@ -1153,17 +1255,12 @@ export async function updateEquipment(formData: FormData) {
   if (!existing) throw new Error('Equipment not found.');
 
   if (session.user.role === 'TECHNICAL_ASSISTANT') {
-    const assignedUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { assignedLaboratoryId: true },
-    });
-
-    if (!assignedUser?.assignedLaboratoryId) {
-      throw new Error('You must be assigned to a laboratory before editing equipment.');
-    }
-
-    if (payload.laboratoryId !== assignedUser.assignedLaboratoryId || existing.laboratoryId !== assignedUser.assignedLaboratoryId) {
-      throw new Error('Technical assistants can only edit equipment in their assigned laboratory.');
+    const assignedLaboratoryIds = await getAssignedLaboratoryIds(session.user.id);
+    if (
+      !assignedLaboratoryIds.includes(payload.laboratoryId) ||
+      !assignedLaboratoryIds.includes(existing.laboratoryId)
+    ) {
+      throw new Error('Technical assistants can only edit equipment in their assigned laboratories.');
     }
   }
 
@@ -1220,17 +1317,6 @@ export async function deleteEquipment(formData: FormData) {
     throw new Error('Only technical assistants and administrators can delete equipment.');
   }
 
-  if (session.user.role === 'TECHNICAL_ASSISTANT') {
-    const assignedUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { assignedLaboratoryId: true },
-    });
-
-    if (!assignedUser?.assignedLaboratoryId) {
-      throw new Error('You must be assigned to a laboratory before deleting equipment.');
-    }
-  }
-
   const id = formData.get('id')?.toString();
   if (!id) throw new Error('Equipment not found.');
 
@@ -1238,13 +1324,9 @@ export async function deleteEquipment(formData: FormData) {
   if (!equipment) throw new Error('Equipment not found.');
 
   if (session.user.role === 'TECHNICAL_ASSISTANT') {
-    const assignedUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { assignedLaboratoryId: true },
-    });
-
-    if (!assignedUser?.assignedLaboratoryId || equipment.laboratoryId !== assignedUser.assignedLaboratoryId) {
-      throw new Error('Technical assistants can only delete equipment from their assigned laboratory.');
+    const assignedLaboratoryIds = await getAssignedLaboratoryIds(session.user.id);
+    if (!assignedLaboratoryIds.includes(equipment.laboratoryId)) {
+      throw new Error('Technical assistants can only delete equipment from their assigned laboratories.');
     }
   }
 

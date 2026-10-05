@@ -13,31 +13,27 @@ export default async function AssistantDashboardPage() {
 
   const assignedLaboratory = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { assignedLaboratoryId: true },
+    select: { assignedLaboratories: { select: { id: true } } },
   });
 
-  const assignedLabId = assignedLaboratory?.assignedLaboratoryId ?? null;
+  const assignedLabIds = assignedLaboratory?.assignedLaboratories.map((laboratory) => laboratory.id) ?? [];
 
   const [pendingOccurrences, occupied, inspection, reports] = await Promise.all([
     prisma.laboratoryRequest.findMany({
-      where: assignedLabId
-        ? { laboratoryId: assignedLabId, status: 'PENDING' }
-        : { id: 'no-assigned-lab', status: 'PENDING' },
+      where: { laboratoryId: { in: assignedLabIds }, status: 'PENDING' },
       select: { reservationDate: true, startTime: true },
     }),
     prisma.laboratory.count({
-      where: assignedLabId ? { id: assignedLabId, status: 'OCCUPIED' } : { id: 'no-assigned-lab', status: 'OCCUPIED' },
+      where: { id: { in: assignedLabIds }, status: 'OCCUPIED' },
     }),
     prisma.laboratory.count({
-      where: assignedLabId ? { id: assignedLabId, status: 'INSPECTION' } : { id: 'no-assigned-lab', status: 'INSPECTION' },
+      where: { id: { in: assignedLabIds }, status: 'INSPECTION' },
     }),
     prisma.equipmentReport.count({
-      where: assignedLabId
-        ? {
-            equipment: { laboratoryId: assignedLabId },
-            status: { not: 'RESOLVED' },
-          }
-        : { id: 'no-assigned-lab', status: { not: 'RESOLVED' } },
+      where: {
+        equipment: { laboratoryId: { in: assignedLabIds } },
+        status: { not: 'RESOLVED' },
+      },
     }),
   ]);
 

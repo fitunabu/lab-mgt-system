@@ -9,7 +9,7 @@ export const technicalAssistantSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters.'),
   email: z.string().trim().email('Please enter a valid email address.'),
   phone: z.string().trim().optional(),
-  assignedLaboratoryId: z.string().optional(),
+  assignedLaboratoryIds: z.array(z.string()),
   status: z.enum(['ACTIVE', 'INACTIVE']),
 });
 
@@ -43,8 +43,12 @@ export const equipmentSchema = z.object({
 });
 
 export const inspectionSchema = z.object({
-  sessionId: z.string().min(1),
   equipmentId: z.string().min(1),
-  statusAfter: z.string().min(1),
+  internetConnected: z.enum(['true', 'false']),
+  monitorFunctional: z.enum(['true', 'false']),
+  mouseFunctional: z.enum(['true', 'false']),
+  powerCableFunctional: z.enum(['true', 'false']),
+  wallOutletFunctional: z.enum(['true', 'false']),
+  osFunctional: z.enum(['true', 'false']),
   notes: z.string().optional(),
 });

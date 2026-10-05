@@ -24,25 +24,17 @@ export default async function RequestsPage({
   const assignedLaboratory = isTechnicalAssistant
     ? await prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { assignedLaboratoryId: true },
+        select: { assignedLaboratories: { select: { id: true } } },
       })
     : null;
-
-  const assignedLabName = isTechnicalAssistant
-    ? await prisma.laboratory.findUnique({
-        where: { id: assignedLaboratory?.assignedLaboratoryId ?? '' },
-        select: { name: true, code: true },
-      })
-    : null;
+  const assignedLaboratoryIds = assignedLaboratory?.assignedLaboratories.map((laboratory) => laboratory.id) ?? [];
 
   const [requests, laboratories] = await Promise.all([
     prisma.laboratoryRequest.findMany({
       where: isTeacher
         ? { teacherId: session.user.id }
         : isTechnicalAssistant
-          ? assignedLaboratory?.assignedLaboratoryId
-            ? { laboratoryId: assignedLaboratory.assignedLaboratoryId }
-            : { id: 'no-assigned-laboratory' }
+          ? { laboratoryId: { in: assignedLaboratoryIds } }
           : undefined,
       include: { laboratory: true, teacher: true },
       orderBy: { createdAt: 'desc' },
@@ -76,11 +68,6 @@ export default async function RequestsPage({
             {showOldRequests ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
             {showOldRequests ? 'Show active requests' : `Show old requests (${oldRequests.length})`}
           </Link>
-          {isTechnicalAssistant && (
-            <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700">
-              Assigned Lab: {assignedLabName ? `${assignedLabName.name} (${assignedLabName.code})` : 'Unassigned'}
-            </div>
-          )}
         </div>
       </div>
 

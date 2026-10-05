@@ -13,21 +13,21 @@ export default async function EquipmentPage() {
   const assignedLaboratory = isTechnicalAssistant
     ? await prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { assignedLaboratoryId: true },
+        select: { assignedLaboratories: { select: { id: true } } },
       })
     : null;
 
-  const assignedLabId = assignedLaboratory?.assignedLaboratoryId ?? null;
+  const assignedLabIds = assignedLaboratory?.assignedLaboratories.map((laboratory) => laboratory.id) ?? [];
 
   const equipment = await prisma.equipment.findMany({
-    where: isTechnicalAssistant && assignedLabId ? { laboratoryId: assignedLabId } : undefined,
+    where: isTechnicalAssistant ? { laboratoryId: { in: assignedLabIds } } : undefined,
     include: { laboratory: true },
     orderBy: { createdAt: 'desc' },
   });
 
-  const labs = isTechnicalAssistant && assignedLabId
+  const labs = isTechnicalAssistant
     ? await prisma.laboratory.findMany({
-        where: { id: assignedLabId },
+        where: { id: { in: assignedLabIds } },
         orderBy: { name: 'asc' },
       })
     : await prisma.laboratory.findMany({ orderBy: { name: 'asc' } });
@@ -39,12 +39,12 @@ export default async function EquipmentPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold text-slate-900">Equipment</h1>
         {canManageEquipment && !isTechnicalAssistant && <EquipmentModal labs={labs} />}
-        {canManageEquipment && isTechnicalAssistant && !assignedLabId && (
+        {canManageEquipment && isTechnicalAssistant && assignedLabIds.length === 0 && (
           <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
             No assigned laboratory
           </span>
         )}
-        {canManageEquipment && isTechnicalAssistant && assignedLabId && <EquipmentModal labs={labs} />}
+        {canManageEquipment && isTechnicalAssistant && assignedLabIds.length > 0 && <EquipmentModal labs={labs} />}
       </div>
 
       <EquipmentTypeInventory equipment={equipment} labs={labs} canManageEquipment={canManageEquipment} />

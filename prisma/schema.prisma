@@ -89,144 +89,151 @@ enum NotificationType {
 }
 
 model User {
-  id                    String   @id @default(cuid())
-  name                  String
-  email                 String   @unique
-  phone                 String?
-  passwordHash          String
+  id                   String     @id @default(cuid())
+  name                 String
+  email                String     @unique
+  phone                String?
+  passwordHash         String
   role                 UserRole
   status               UserStatus @default(ACTIVE)
-  assignedLaboratoryId String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
 
-  assignedLaboratory  Laboratory?                  @relation("AssignedLaboratoryUsers", fields: [assignedLaboratoryId], references: [id])
-  requests            LaboratoryRequest[]          @relation("TeacherRequests")
-  approvals           LaboratoryRequest[]          @relation("RequestApprovals")
-  sessions            LaboratorySession[]          @relation("TeacherSessions")
-  inspections         EquipmentInspection[]        @relation("InspectionOperator")
-  reportsCreated      EquipmentReport[]            @relation("ReportCreator")
-  reportsResolved     EquipmentReport[]            @relation("ReportResolver")
-  notifications       Notification[]
-  auditLogs           AuditLog[]
+  assignedLaboratories Laboratory[]        @relation("AssignedLaboratoryUsers")
+  requests           LaboratoryRequest[]   @relation("TeacherRequests")
+  approvals          LaboratoryRequest[]   @relation("RequestApprovals")
+  sessions           LaboratorySession[]   @relation("TeacherSessions")
+  inspections        EquipmentInspection[] @relation("InspectionOperator")
+  reportsCreated     EquipmentReport[]     @relation("ReportCreator")
+  reportsResolved    EquipmentReport[]     @relation("ReportResolver")
+  notifications      Notification[]
+  auditLogs          AuditLog[]
 
   @@index([role, status])
 }
 
 model Laboratory {
-  id          String            @id @default(cuid())
+  id          String           @id @default(cuid())
   name        String
-  code        String            @unique
+  code        String           @unique
   location    String
   capacity    Int
-  status      LaboratoryStatus  @default(AVAILABLE)
+  status      LaboratoryStatus @default(AVAILABLE)
   description String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
-  equipment       Equipment[]
-  requests        LaboratoryRequest[]
-  sessions        LaboratorySession[]
-  assignedUsers   User[]             @relation("AssignedLaboratoryUsers")
-  auditLogs       AuditLog[]
+  equipment     Equipment[]
+  requests      LaboratoryRequest[]
+  sessions      LaboratorySession[]
+  assignedUsers User[]              @relation("AssignedLaboratoryUsers")
+  auditLogs     AuditLog[]
 
   @@index([status])
 }
 
 model Equipment {
-  id            String          @id @default(cuid())
-  assetNumber   String          @unique
+  id            String             @id @default(cuid())
+  assetNumber   String             @unique
   equipmentType EquipmentType
   name          String
   brand         String?
   model         String?
-  serialNumber  String?         @unique
+  serialNumber  String?            @unique
   hardDiskSize  String?
   ramSize       String?
   installedOS   String?
   laboratoryId  String
-  status        EquipmentStatus @default(FUNCTIONAL)
+  status        EquipmentStatus    @default(FUNCTIONAL)
   condition     EquipmentCondition @default(GOOD)
   purchaseDate  DateTime?
   notes         String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
-  laboratory      Laboratory            @relation(fields: [laboratoryId], references: [id])
-  inspections     EquipmentInspection[]
-  reports         EquipmentReport[]
+  laboratory  Laboratory            @relation(fields: [laboratoryId], references: [id])
+  inspections EquipmentInspection[]
+  reports     EquipmentReport[]
 
   @@index([laboratoryId, status])
   @@index([equipmentType])
 }
 
 model LaboratoryRequest {
-  id               String        @id @default(cuid())
-  teacherId        String
-  laboratoryId     String
-  reservationDate  DateTime
-  startTime        String
-  endTime          String
-  course           String
-  studentCount     Int
-  purpose          String
-  status           RequestStatus @default(PENDING)
-  startDate        DateTime?
-  endDate          DateTime?
+  id                String        @id @default(cuid())
+  teacherId         String
+  laboratoryId      String
+  reservationDate   DateTime
+  startTime         String
+  endTime           String
+  course            String
+  studentCount      Int
+  purpose           String
+  status            RequestStatus @default(PENDING)
+  startDate         DateTime?
+  endDate           DateTime?
   recurrencePattern String?
-  rejectionReason  String?
-  approvedBy       String?
-  approvedAt       DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  rejectionReason   String?
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  teacher          User            @relation("TeacherRequests", fields: [teacherId], references: [id])
-  laboratory       Laboratory      @relation(fields: [laboratoryId], references: [id])
-  approver         User?           @relation("RequestApprovals", fields: [approvedBy], references: [id])
-  session          LaboratorySession?
+  teacher    User               @relation("TeacherRequests", fields: [teacherId], references: [id])
+  laboratory Laboratory         @relation(fields: [laboratoryId], references: [id])
+  approver   User?              @relation("RequestApprovals", fields: [approvedBy], references: [id])
+  session    LaboratorySession?
 
   @@index([laboratoryId, reservationDate])
   @@index([teacherId, status])
 }
 
 model LaboratorySession {
-  id              String        @id @default(cuid())
-  requestId       String        @unique
-  teacherId       String
-  laboratoryId    String
-  scheduledStart  DateTime
-  scheduledEnd    DateTime
-  actualStart     DateTime?
-  actualEnd       DateTime?
-  status          SessionStatus @default(SCHEDULED)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  requestId      String        @unique
+  teacherId      String
+  laboratoryId   String
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  status         SessionStatus @default(SCHEDULED)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  request         LaboratoryRequest @relation(fields: [requestId], references: [id])
-  teacher         User             @relation("TeacherSessions", fields: [teacherId], references: [id])
-  laboratory      Laboratory       @relation(fields: [laboratoryId], references: [id])
-  inspections     EquipmentInspection[]
-  reports         EquipmentReport[]
+  request     LaboratoryRequest     @relation(fields: [requestId], references: [id])
+  teacher     User                  @relation("TeacherSessions", fields: [teacherId], references: [id])
+  laboratory  Laboratory            @relation(fields: [laboratoryId], references: [id])
+  inspections EquipmentInspection[]
+  reports     EquipmentReport[]
 
   @@index([laboratoryId, status])
 }
 
 model EquipmentInspection {
-  id           String            @id @default(cuid())
-  sessionId    String
-  equipmentId  String
-  statusBefore InspectionStatus?
-  statusAfter  InspectionStatus?
-  notes        String?
-  inspectedBy  String?
-  inspectedAt  DateTime?
-  createdAt    DateTime          @default(now())
+  id                   String            @id @default(cuid())
+  batchId              String?
+  sessionId            String?
+  equipmentId          String
+  statusBefore         InspectionStatus?
+  statusAfter          InspectionStatus?
+  internetConnected    Boolean?
+  monitorFunctional    Boolean?
+  mouseFunctional      Boolean?
+  powerCableFunctional Boolean?
+  wallOutletFunctional Boolean?
+  osFunctional         Boolean?
+  notes                String?
+  inspectedBy          String?
+  inspectedAt          DateTime?
+  createdAt            DateTime          @default(now())
 
-  session      LaboratorySession @relation(fields: [sessionId], references: [id])
-  equipment    Equipment         @relation(fields: [equipmentId], references: [id])
-  inspector    User?             @relation("InspectionOperator", fields: [inspectedBy], references: [id])
+  session   LaboratorySession? @relation(fields: [sessionId], references: [id])
+  equipment Equipment          @relation(fields: [equipmentId], references: [id])
+  inspector User?              @relation("InspectionOperator", fields: [inspectedBy], references: [id])
 
   @@index([sessionId, equipmentId])
+  @@index([batchId])
 }
 
 model EquipmentReport {
@@ -240,38 +247,38 @@ model EquipmentReport {
   resolvedAt  DateTime?
   createdAt   DateTime     @default(now())
 
-  equipment   Equipment         @relation(fields: [equipmentId], references: [id])
-  session     LaboratorySession? @relation(fields: [sessionId], references: [id])
-  reporter    User              @relation("ReportCreator", fields: [reportedBy], references: [id])
-  resolver    User?             @relation("ReportResolver", fields: [resolvedBy], references: [id])
+  equipment Equipment          @relation(fields: [equipmentId], references: [id])
+  session   LaboratorySession? @relation(fields: [sessionId], references: [id])
+  reporter  User               @relation("ReportCreator", fields: [reportedBy], references: [id])
+  resolver  User?              @relation("ReportResolver", fields: [resolvedBy], references: [id])
 
   @@index([status, equipmentId])
 }
 
 model Notification {
-  id        String          @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
   title     String
   message   String
   type      NotificationType @default(INFO)
-  isRead    Boolean         @default(false)
-  createdAt DateTime        @default(now())
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
 
-  user      User            @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String?
+  id           String   @id @default(cuid())
+  userId       String?
   laboratoryId String?
-  action      String
-  entity      String
-  entityId    String?
-  description String
-  createdAt   DateTime @default(now())
+  action       String
+  entity       String
+  entityId     String?
+  description  String
+  createdAt    DateTime @default(now())
 
-  user        User?        @relation(fields: [userId], references: [id])
-  laboratory  Laboratory?  @relation(fields: [laboratoryId], references: [id])
+  user       User?       @relation(fields: [userId], references: [id])
+  laboratory Laboratory? @relation(fields: [laboratoryId], references: [id])
 
   @@index([entity, entityId])
 }

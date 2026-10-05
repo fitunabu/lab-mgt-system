@@ -12,8 +12,7 @@ type TechnicalAssistant = {
   email: string;
   phone: string | null;
   status: string;
-  assignedLaboratoryId: string | null;
-  assignedLaboratory: { id: string; name: string; code: string } | null;
+  assignedLaboratories: Array<{ id: string; name: string; code: string }>;
 };
 
 type TechnicalAssistantManagerProps = {
@@ -113,8 +112,8 @@ export function TechnicalAssistantManager({ assistants, laboratories }: Technica
                   <td className="px-4 py-3">{assistant.email}</td>
                   <td className="px-4 py-3">{assistant.phone || '—'}</td>
                   <td className="px-4 py-3">
-                    {assistant.assignedLaboratory
-                      ? `${assistant.assignedLaboratory.name} (${assistant.assignedLaboratory.code})`
+                    {assistant.assignedLaboratories.length > 0
+                      ? assistant.assignedLaboratories.map((laboratory) => `${laboratory.name} (${laboratory.code})`).join(', ')
                       : 'Unassigned'}
                   </td>
                   <td className="px-4 py-3">
@@ -177,15 +176,26 @@ export function TechnicalAssistantManager({ assistants, laboratories }: Technica
                   Phone
                   <input name="phone" type="tel" defaultValue={selectedAssistant?.phone ?? ''} className="w-full rounded-md border border-slate-300 px-3 py-2 font-normal" />
                 </label>
-                <label className="space-y-1 text-sm font-medium text-slate-700">
-                  Assigned laboratory
-                  <select name="assignedLaboratoryId" defaultValue={selectedAssistant?.assignedLaboratoryId ?? ''} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-normal">
-                    <option value="">Unassigned</option>
+                <fieldset className="space-y-2 text-sm font-medium text-slate-700 sm:col-span-2">
+                  <legend>Assigned laboratories</legend>
+                  <div className="grid gap-2 rounded-md border border-slate-300 p-3 sm:grid-cols-2">
                     {laboratories.map((laboratory) => (
-                      <option key={laboratory.id} value={laboratory.id}>{laboratory.name} ({laboratory.code})</option>
+                      <label key={laboratory.id} className="flex items-center gap-2 font-normal">
+                        <input
+                          type="checkbox"
+                          name="laboratoryIds"
+                          value={laboratory.id}
+                          defaultChecked={selectedAssistant?.assignedLaboratories.some(
+                            (assignedLaboratory) => assignedLaboratory.id === laboratory.id,
+                          )}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                        />
+                        {laboratory.name} ({laboratory.code})
+                      </label>
                     ))}
-                  </select>
-                </label>
+                  </div>
+                  <span className="block text-xs font-normal text-slate-500">Select every laboratory this assistant is responsible for.</span>
+                </fieldset>
                 <label className="space-y-1 text-sm font-medium text-slate-700">
                   Status
                   <select name="status" defaultValue={selectedAssistant?.status ?? 'ACTIVE'} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-normal">

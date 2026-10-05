@@ -55,14 +55,14 @@ async function main() {
   if (computerLab) {
     await prisma.user.update({
       where: { email: 'assistant1@example.com' },
-      data: { assignedLaboratoryId: computerLab.id },
+      data: { assignedLaboratories: { set: [{ id: computerLab.id }] } },
     });
   }
 
   if (networkLab) {
     await prisma.user.update({
       where: { email: 'assistant2@example.com' },
-      data: { assignedLaboratoryId: networkLab.id },
+      data: { assignedLaboratories: { set: [{ id: networkLab.id }] } },
     });
   }
 
