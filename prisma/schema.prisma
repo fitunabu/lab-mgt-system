@@ -93,6 +93,7 @@ model User {
   name                 String
   email                String     @unique
   phone                String?
+  department           String?
   passwordHash         String
   role                 UserRole
   status               UserStatus @default(ACTIVE)

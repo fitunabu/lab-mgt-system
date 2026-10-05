@@ -3,11 +3,12 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { inspectionSchema, requestSchema, technicalAssistantSchema } from '@/lib/validations';
+import { inspectionSchema, requestSchema, teacherSignupSchema, technicalAssistantSchema } from '@/lib/validations';
 
 function minutesFromTime(value: string) {
   const [hours, minutes] = value.split(':').map(Number);
@@ -805,6 +806,51 @@ export async function createComputerInspection(formData: FormData) {
   });
 
   revalidatePath('/inspections');
+}
+
+export async function registerTeacher(formData: FormData) {
+  const parsed = teacherSignupSchema.safeParse({
+    name: formData.get('name')?.toString() ?? '',
+    department: formData.get('department')?.toString() ?? '',
+    phone: formData.get('phone')?.toString() ?? '',
+    email: formData.get('email')?.toString() ?? '',
+    password: formData.get('password')?.toString() ?? '',
+  });
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Please check the signup details.');
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const existingUser = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (existingUser) {
+    throw new Error('An account with this email already exists. Please sign in instead.');
+  }
+
+  try {
+    await prisma.user.create({
+      data: {
+        name: parsed.data.name,
+        department: parsed.data.department,
+        phone: parsed.data.phone,
+        email,
+        passwordHash: await bcrypt.hash(parsed.data.password, 10),
+        role: 'TEACHER',
+        status: 'ACTIVE',
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      Array.isArray(error.meta?.target) &&
+      error.meta.target.includes('email')
+    ) {
+      throw new Error('An account with this email already exists. Please sign in instead.');
+    }
+    throw error;
+  }
+
+  return { email };
 }
 
 export async function createLaboratory(formData: FormData) {
